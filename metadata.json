@@ -1,0 +1,6 @@
+{
+  "name": "Aelarien Sentinel",
+  "description": "Enterprise AI Governance platform providing real-time monitoring, hallucination detection, and policy enforcement for multi-agent workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI Agents", "Governance", "RAG"]
+}

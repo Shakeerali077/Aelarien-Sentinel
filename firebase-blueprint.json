@@ -1,0 +1,151 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "An enterprise project or workspace container.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId", "createdAt"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "An uploaded policy, contract, or SOP for RAG.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "name": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "name", "content", "uploadedBy", "createdAt"]
+    },
+    "Agent": {
+      "title": "Agent",
+      "description": "Definition of an AI agent in the workflow.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "systemInstruction": { "type": "string" },
+        "modelId": { "type": "string", "enum": ["gemini-2.0-flash", "gemini-1.5-pro"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "name", "role", "systemInstruction", "modelId", "isActive", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Records of AI interactions and security checks.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "agentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "prompt": { "type": "string" },
+        "response": { "type": "string" },
+        "riskScore": { "type": "number" },
+        "complianceStatus": { "type": "string", "enum": ["COMPLIANT", "VIOLATION", "WARNING"] },
+        "hallucinationDetected": { "type": "boolean" },
+        "validationDetails": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "userId", "prompt", "response", "riskScore", "complianceStatus", "createdAt"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "Security alerts for high-risk AI interactions.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "logId": { "type": "string" },
+        "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "message": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "logId", "severity", "message", "isRead", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "An individual message in a chat history.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "bot"] },
+        "content": { "type": "string" },
+        "validation": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "userId", "role", "content", "createdAt"]
+    },
+    "ProjectMember": {
+      "title": "Project Member",
+      "description": "A user with specifically assigned roles in a workspace.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "ANALYST"] },
+        "addedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "addedAt"]
+    },
+    "Policy": {
+      "title": "Policy",
+      "description": "Governance rules for AI agents.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "rules": { "type": "array", "items": { "type": "string" } },
+        "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "name", "rules", "severity", "isActive", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Top-level enterprise workspaces."
+    },
+    "/projects/{projectId}/members/{userId}": {
+      "schema": "ProjectMember",
+      "description": "Authorized workspace personnel."
+    },
+    "/projects/{projectId}/documents/{docId}": {
+      "schema": "Document",
+      "description": "Knowledge base files for RAG."
+    },
+    "/projects/{projectId}/agents/{agentId}": {
+      "schema": "Agent",
+      "description": "Workflow agents configured for the project."
+    },
+    "/projects/{projectId}/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "History of AI agents usage and validation."
+    },
+    "/projects/{projectId}/alerts/{alertId}": {
+      "schema": "Alert",
+      "description": "Security alerts triggered by validators."
+    },
+    "/projects/{projectId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Stored chat history for the AI Workspace."
+    },
+    "/projects/{projectId}/policies/{policyId}": {
+      "schema": "Policy",
+      "description": "Active governance boundaries."
+    }
+  }
+}

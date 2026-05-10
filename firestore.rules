@@ -1,0 +1,223 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // GLOBAL HELPERS
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(projectId) {
+      let projectPath = /databases/$(database)/documents/projects/$(projectId);
+      return exists(projectPath) && get(projectPath).data.ownerId == request.auth.uid;
+    }
+
+    function isMember(projectId) {
+      let projectPath = /databases/$(database)/documents/projects/$(projectId);
+      return (projectId == 'sentinel-alpha' && isSignedIn()) || (
+        exists(projectPath) && (
+          get(projectPath).data.ownerId == request.auth.uid || 
+          request.auth.uid in get(projectPath).data.members ||
+          exists(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid))
+        )
+      );
+    }
+
+    function isRole(projectId, role) {
+      let memberPath = /databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid);
+      return isOwner(projectId) || (exists(memberPath) && get(memberPath).data.role == role);
+    }
+
+    function isAdmin(projectId) {
+      return isRole(projectId, 'ADMIN');
+    }
+
+    function isAnalyst(projectId) {
+      return isRole(projectId, 'ANALYST') || isAdmin(projectId);
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // -------------------------------------------------------------------------
+    // ENTITY VALIDATORS
+    // -------------------------------------------------------------------------
+    
+    function isValidProject(data) {
+      return data.keys().hasAll(['name', 'ownerId', 'members', 'createdAt']) &&
+             data.keys().size() == 4 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.ownerId == request.auth.uid &&
+             data.members is list && data.members.size() <= 50 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidDocument(data, projectId) {
+      return data.keys().hasAll(['projectId', 'name', 'content', 'type', 'uploadedBy', 'createdAt']) &&
+             data.keys().size() == 6 &&
+             data.projectId == projectId &&
+             data.name is string && data.name.size() <= 200 &&
+             data.content is string && data.content.size() <= 100000 &&
+             data.type is string &&
+             data.uploadedBy == request.auth.uid &&
+             data.createdAt == request.time;
+    }
+
+    function isValidAgent(data, projectId) {
+      return data.keys().hasAll(['projectId', 'name', 'role', 'systemInstruction', 'modelId', 'isActive', 'createdAt']) &&
+             data.keys().size() == 7 &&
+             data.projectId == projectId &&
+             data.name is string && data.name.size() <= 100 &&
+             data.role is string && data.role.size() <= 100 &&
+             data.systemInstruction is string && data.systemInstruction.size() <= 10000 &&
+             data.modelId in ['gemini-2.0-flash', 'gemini-1.5-pro'] &&
+             data.isActive is bool &&
+             data.createdAt == request.time;
+    }
+
+    function isValidAuditLog(data, projectId) {
+      return data.keys().hasAll(['projectId', 'agentId', 'userId', 'prompt', 'response', 'riskScore', 'complianceStatus', 'hallucinationDetected', 'createdAt']) &&
+             (data.keys().size() == 9 || data.keys().size() == 10) &&
+             data.projectId == projectId &&
+             data.agentId is string && data.agentId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.prompt is string && data.prompt.size() <= 10000 &&
+             data.response is string && data.response.size() <= 10000 &&
+             data.riskScore is number && data.riskScore >= 0 && data.riskScore <= 100 &&
+             data.complianceStatus in ['COMPLIANT', 'VIOLATION', 'WARNING'] &&
+             data.hallucinationDetected is bool &&
+             (!data.keys().hasAny(['validationDetails']) || (data.validationDetails is string && data.validationDetails.size() <= 2000)) &&
+             data.createdAt == request.time;
+    }
+
+    function isValidAlert(data, projectId) {
+      return data.keys().hasAll(['projectId', 'logId', 'severity', 'message', 'isRead', 'createdAt']) &&
+             data.projectId == projectId &&
+             data.logId is string &&
+             data.severity in ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] &&
+             data.message is string && data.message.size() <= 1000 &&
+             data.isRead is bool &&
+             data.createdAt == request.time;
+    }
+
+    function isValidMessage(data, projectId) {
+      return data.keys().hasAll(['projectId', 'userId', 'role', 'content', 'createdAt']) &&
+             (data.keys().size() == 5 || data.keys().size() == 6) &&
+             data.projectId == projectId &&
+             data.userId == request.auth.uid &&
+             data.role in ['user', 'bot'] &&
+             data.content is string && data.content.size() <= 20000 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidMember(data) {
+      return data.keys().hasAll(['email', 'role', 'addedAt']) &&
+             data.keys().size() == 3 &&
+             data.email is string &&
+             data.role in ['ADMIN', 'ANALYST'] &&
+             data.addedAt == request.time;
+    }
+
+    function isValidPolicy(data, projectId) {
+      return data.keys().hasAll(['projectId', 'name', 'rules', 'severity', 'isActive', 'createdAt']) &&
+             (data.keys().size() == 6 || data.keys().size() == 7) &&
+             data.projectId == projectId &&
+             data.name is string && data.name.size() <= 100 &&
+             data.rules is list && data.rules.size() <= 64 &&
+             data.severity in ['LOW', 'MEDIUM', 'HIGH'] &&
+             data.isActive is bool &&
+             data.createdAt == request.time;
+    }
+
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // PROJECTS
+    match /projects/{projectId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid || 
+        request.auth.uid in resource.data.members ||
+        exists(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid))
+      );
+      allow create: if isSignedIn() && isValidId(projectId) && isValidProject(incoming());
+      allow update: if isSignedIn() && isOwner(projectId) && 
+                      incoming().ownerId == existing().ownerId &&
+                      incoming().createdAt == existing().createdAt &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'members']);
+      allow delete: if isSignedIn() && isOwner(projectId);
+
+      // MEMBERS
+      match /members/{userId} {
+        allow read: if isSignedIn() && isMember(projectId);
+        allow write: if isSignedIn() && isAdmin(projectId) && isValidId(userId) && isValidMember(incoming());
+      }
+    }
+
+    // DOCUMENTS
+    match /projects/{projectId}/documents/{docId} {
+      allow read: if isSignedIn() && isMember(projectId);
+      allow create: if isSignedIn() && isAdmin(projectId) && isValidId(docId) && isValidDocument(incoming(), projectId);
+      allow update: if false; // Documents are immutable for compliance
+      allow delete: if isSignedIn() && isAdmin(projectId);
+    }
+
+    // AGENTS
+    match /projects/{projectId}/agents/{agentId} {
+      allow read: if isSignedIn() && isMember(projectId);
+      allow create: if isSignedIn() && isValidId(agentId) && isAdmin(projectId) && isValidAgent(incoming(), projectId);
+      allow update: if isSignedIn() && isAdmin(projectId) && 
+                      incoming().projectId == existing().projectId &&
+                      incoming().createdAt == existing().createdAt &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'systemInstruction', 'modelId', 'isActive']);
+      allow delete: if isSignedIn() && isAdmin(projectId);
+    }
+
+    // AUDIT LOGS
+    match /projects/{projectId}/audit_logs/{logId} {
+      allow read: if isSignedIn() && isMember(projectId);
+      allow create: if isSignedIn() && isMember(projectId) && isValidAuditLog(incoming(), projectId);
+      allow update: if false; // Audit logs are strictly immutable
+      allow delete: if isSignedIn() && isAdmin(projectId);
+    }
+
+    // ALERTS
+    match /projects/{projectId}/alerts/{alertId} {
+      allow read: if isSignedIn() && isMember(projectId);
+      allow create: if isSignedIn() && isValidId(alertId) && isMember(projectId) && isValidAlert(incoming(), projectId);
+      allow update: if isSignedIn() && isMember(projectId) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if false;
+    }
+
+    // MESSAGES
+    match /projects/{projectId}/messages/{messageId} {
+      allow read: if isSignedIn() && isMember(projectId);
+      allow create: if isSignedIn() && isValidId(messageId) && isMember(projectId) && isValidMessage(incoming(), projectId);
+      allow delete: if isSignedIn() && isMember(projectId);
+    }
+
+    // POLICIES
+    match /projects/{projectId}/policies/{policyId} {
+      allow read: if isSignedIn() && isMember(projectId);
+      allow create: if isSignedIn() && isValidId(policyId) && isAdmin(projectId) && isValidPolicy(incoming(), projectId);
+      allow update: if isSignedIn() && isAdmin(projectId) && 
+                      incoming().projectId == existing().projectId &&
+                      incoming().createdAt == existing().createdAt &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'rules', 'severity', 'isActive']);
+      allow delete: if isSignedIn() && isAdmin(projectId);
+    }
+  }
+}
